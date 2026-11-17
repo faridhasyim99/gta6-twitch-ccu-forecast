@@ -19,20 +19,28 @@
 #      launch whose hour 1 is already big has most of its audience
 #      watching, while a small hour 1 means most of the audience is yet
 #      to arrive. So per hour, regress L[h] on ln(v_1) over the
-#      comparables (OLS) and predict the median at the case's own hour-1
-#      print. The OLS slope is shrunk 20% toward the unconditioned
-#      median (SHRINK = 0.8): the full slope over-trusts the fit at the
-#      top end of the size range, exactly where the final's hour-1 print
-#      will sit, and the shrunk version wins the final-like practice
-#      case (God of War, the biggest hour 1) by 0.019.
+#      comparables (OLS) and predict at the case's own hour-1 print.
+#      The OLS prediction is shrunk 30% toward the unconditioned MEAN
+#      (SHRINK = 0.7): the full slope over-trusts the fit at the top
+#      end of the size range, exactly where the final's hour-1 print
+#      will sit. The anchor is the MEAN, not the median (v2 change):
+#      L[h] is right-skewed across launches (small launches explode
+#      from a tiny hour 1), so the median sits below where realized
+#      launches land; anchoring on the mean wins 3 of 4 practice cases,
+#      including the biggest and most final-like one (God of War,
+#      0.158 -> 0.105), and the leave-one-comparable-out mean confirms
+#      it (0.151 vs 0.172 for the median-anchored version).
 #
 #   3. SPREAD. The band is normal in log space around the median, with
-#      per-hour sigma = the OLS residual SD, scaled by WIDTH = 0.4.
-#      The raw residual SD is inflated by structurally different
-#      launches (PC-simultaneous unlocks, tiny categories), so the full
-#      width over-covers (coverage 1.00 at W = 0.7); W = 0.4 is the
-#      interior optimum with honest coverage (0.88 vs the 0.90 nominal),
-#      and W = 0 (median-only) is worse (0.199) than W = 0.4 (0.171).
+#      sigma = a single POOLED residual SD (v2 change), scaled by
+#      WIDTH = 0.35. The pooled SD is computed once per case from the
+#      residuals of all 23 per-hour OLS fits (about 800 residuals), so
+#      it is far more stable than 23 separate per-hour SDs (which range
+#      0.29..1.05). The raw residual SD is inflated by structurally
+#      different launches (PC-simultaneous unlocks, tiny categories),
+#      so the full width over-covers; W = 0.35 is the interior optimum
+#      at the pooled scale, with honest coverage (0.88 vs the 0.90
+#      nominal).
 #
 #   4. FLOOR. Comparables with hour-1 print below 1,000 viewers are
 #      left out of the fit: small categories are sampled sparsely by the
@@ -47,13 +55,16 @@
 # hourly averages -- the same data the practice cases were cut from;
 # see dev/build_answers.py for the validation: every hour-1 print and
 # 926 history points match the case files exactly):
-#   loss 0.170967 (house baseline 0.387097; -56%).
-#   Per case: p00 Wolverine 0.1658 (baseline 0.7437), p01 RDR2 0.1833
-#   (0.2868), p02 God of War 0.1578 (0.2146), p03 Spider-Man 2 0.1769
-#   (0.3033). Wins 4/4 cases. Coverage_90 0.88, typical miss ~19%.
-#   Leave-one-case-out means for this variant: 0.172-0.175 in every
-#   fold (baseline LOCO 0.268-0.445), so the gain is not driven by any
-#   single case.
+#   loss 0.150081 (house baseline 0.387097; -61%; submitted v1: 0.170967).
+#   Per case: p00 Wolverine 0.1535 (baseline 0.7437), p01 RDR2 0.1474
+#   (0.2868), p02 God of War 0.1053 (0.2146), p03 Spider-Man 2 0.1940
+#   (0.3033). Wins 4/4 cases vs the baseline. Coverage_90 0.88.
+#   Leave-one-comparable-out mean for this variant: 0.150810 over 34
+#   folds (worst fold 0.1679, still below the submitted entry's mean),
+#   so the gain is not driven by any single comparable. The only case
+#   this variant loses vs v1 is p03 (+0.017): Spider-Man 2's realized
+#   midday dip is unusually flat, and the mean anchor overshoots it;
+#   chasing that one case would be overfitting to a single launch.
 #
 # Rejected levers (all tested on practice, see TESTS.md):
 #   - Unconditioned median curve (v1): 0.310 -- the size conditioning
@@ -83,6 +94,17 @@
 # standard library and ships no local module, so the insert had no effect.
 # Re-scored after the removal on the four practice cases: loss still
 # 0.170967 (p00 0.165828, p01 0.183308, p02 0.157833, p03 0.176899).
+#
+# v2 (2026-11-17, entry-v2): mean anchor instead of median, pooled
+# residual SD instead of per-hour SD, SHRINK 0.8 -> 0.7, WIDTH 0.4 ->
+# 0.35. Verified on the four practice cases plus leave-one-comparable-
+# out (34 folds): practice 0.150081, LOCO 0.150810, vs the submitted
+# v1's 0.170967 / 0.171595. Grid-searched over shrink/width/floor and
+# structural variants (winsorized OLS, Theil-Sen, top-half slope,
+# trimmed-mean/q60-q70 anchors, sigma floor, min-hours); the mean
+# anchor is the real gain, the pooled sigma a small stable extra.
+# Rejected: top-half slope (0.225-0.260, p00 blows up), winsorized OLS
+# (0.189-0.202), Theil-Sen (0.195-0.202), floor 5000 (p00 0.39-0.42).
 
 import json
 import math
@@ -98,9 +120,9 @@ LEVELS = [0.05, 0.25, 0.5, 0.75, 0.95]
 Z = [-1.645, -0.674, 0, 0.674, 1.645]
 
 # OLS slope shrinkage toward the unconditioned median (see header, 2).
-SHRINK = 0.8
+SHRINK = 0.7
 # Residual-SD multiplier for the log-space band (see header, 3).
-WIDTH = 0.4
+WIDTH = 0.35
 # Comparables with an hour-1 print below this are left out (see header, 4).
 V1_FLOOR = 1000
 # Minimum band sigma, in log units (a band must never collapse to zero).
@@ -130,6 +152,10 @@ def median(xs: list[float]) -> float:
     return ys[n // 2] if n % 2 else 0.5 * (ys[n // 2 - 1] + ys[n // 2])
 
 
+def mean(xs: list[float]) -> float:
+    return sum(xs) / len(xs)
+
+
 def ols(xs: list[float], ys: list[float]) -> tuple[float, float, float]:
     """Least-squares fit y ~ a + b*x; returns (a, b, residual SD)."""
     n = len(xs)
@@ -144,6 +170,27 @@ def ols(xs: list[float], ys: list[float]) -> tuple[float, float, float]:
     else:
         sd = 0.0
     return a, b, sd
+
+
+def pooled_residual_sd(curves: list[tuple[float, dict[int, float]]]) -> float:
+    """One residual SD pooled over all 23 per-hour OLS fits.
+
+    Sums squared residuals and degrees of freedom (n_h - 2) across hours.
+    Returns 0.0 if there are no usable fits (caller falls back to the
+    per-hour SD in that degenerate case, which never occurs in practice).
+    """
+    ss = 0.0
+    nn = 0
+    for h in range(2, 25):
+        pts = [(x, r[h]) for x, r in curves if h in r]
+        if len(pts) < 3:
+            continue
+        xs = [p[0] for p in pts]
+        ys = [p[1] for p in pts]
+        a, b, _ = ols(xs, ys)
+        ss += sum((y - (a + b * x)) ** 2 for x, y in pts)
+        nn += len(pts) - 2
+    return math.sqrt(ss / nn) if nn > 0 else 0.0
 
 
 def release_day_hours(comp: dict) -> dict[int, float]:
@@ -170,7 +217,8 @@ def comparable_curves(case: dict) -> list[tuple[float, dict[int, float]]]:
     return curves
 
 
-def hour_quantiles(p1: float, h: int, curves: list[tuple[float, dict[int, float]]]) -> list[float | int]:
+def hour_quantiles(p1: float, h: int, curves: list[tuple[float, dict[int, float]]],
+                   pooled_sd: float) -> list[float | int]:
     """The five quantiles for hour h: OLS-conditioned median + normal band."""
     pts = [(x, r[h]) for x, r in curves if h in r]
     if len(pts) < MIN_CURVES:
@@ -178,10 +226,11 @@ def hour_quantiles(p1: float, h: int, curves: list[tuple[float, dict[int, float]
         return [round2(p1 * math.exp(z * FALLBACK_SIGMA * math.sqrt(h - 1))) for z in Z]
     xs = [p[0] for p in pts]
     ys = [p[1] for p in pts]
-    med_all = median(ys)
+    mean_all = mean(ys)
     a, b, sd = ols(xs, ys)
-    med = med_all + SHRINK * ((a + b * math.log(p1)) - med_all)
-    sig = max(sd * WIDTH, SIGMA_FLOOR)
+    med = mean_all + SHRINK * ((a + b * math.log(p1)) - mean_all)
+    # Pooled SD when available; per-hour SD only in the degenerate case.
+    sig = max((pooled_sd if pooled_sd > 0 else sd) * WIDTH, SIGMA_FLOOR)
     qs = [p1 * math.exp(med + z * sig) for z in Z]
     # Enforce non-decreasing (exp is monotone, so this is a formality)
     # and the output cap of 1e9 viewers.
@@ -202,7 +251,8 @@ def forecast_case(case: dict, name: str) -> dict:
         raise ValueError(f"{name} has no hour-1 print")
     p1 = max(1, first["viewers"])
     curves = comparable_curves(case)
-    return {"hours": [{"hour": row["hour"], "q": hour_quantiles(p1, row["hour"], curves)}
+    pooled_sd = pooled_residual_sd(curves)
+    return {"hours": [{"hour": row["hour"], "q": hour_quantiles(p1, row["hour"], curves, pooled_sd)}
                     for row in case["forecast"]]}
 
 
