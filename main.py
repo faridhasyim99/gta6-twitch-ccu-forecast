@@ -20,8 +20,8 @@
 #      watching, while a small hour 1 means most of the audience is yet
 #      to arrive. So per hour, regress L[h] on ln(v_1) over the
 #      comparables (OLS) and predict at the case's own hour-1 print.
-#      The OLS prediction is shrunk 30% toward the unconditioned MEAN
-#      (SHRINK = 0.7): the full slope over-trusts the fit at the top
+#      The OLS prediction is shrunk 25% toward the unconditioned MEAN
+#      (SHRINK = 0.75): the full slope over-trusts the fit at the top
 #      end of the size range, exactly where the final's hour-1 print
 #      will sit. The anchor is the MEAN, not the median (v2 change):
 #      L[h] is right-skewed across launches (small launches explode
@@ -40,7 +40,13 @@
 #      different launches (PC-simultaneous unlocks, tiny categories),
 #      so the full width over-covers; W = 0.35 is the interior optimum
 #      at the pooled scale, with honest coverage (0.88 vs the 0.90
-#      nominal).
+#      nominal). The band is ASYMMETRIC (v3 change): the lower quantiles
+#      use 0.80x the width and the upper quantiles 1.18x, because the
+#      log-ratio residuals are right-skewed -- realized launches
+#      overshoot the median far more often than they undershoot it, so
+#      the upper tail needs room the lower tail does not. The asymmetry
+#      is a broad plateau (lo 0.75-0.90 x hi 1.05-1.25 all beat v2 on
+#      both measures), not a tuned point.
 #
 #   4. FLOOR. Comparables with hour-1 print below 1,000 viewers are
 #      left out of the fit: small categories are sampled sparsely by the
@@ -55,16 +61,15 @@
 # hourly averages -- the same data the practice cases were cut from;
 # see dev/build_answers.py for the validation: every hour-1 print and
 # 926 history points match the case files exactly):
-#   loss 0.150081 (house baseline 0.387097; -61%; submitted v1: 0.170967).
-#   Per case: p00 Wolverine 0.1535 (baseline 0.7437), p01 RDR2 0.1474
-#   (0.2868), p02 God of War 0.1053 (0.2146), p03 Spider-Man 2 0.1940
-#   (0.3033). Wins 4/4 cases vs the baseline. Coverage_90 0.88.
-#   Leave-one-comparable-out mean for this variant: 0.150810 over 34
-#   folds (worst fold 0.1679, still below the submitted entry's mean),
-#   so the gain is not driven by any single comparable. The only case
-#   this variant loses vs v1 is p03 (+0.017): Spider-Man 2's realized
-#   midday dip is unusually flat, and the mean anchor overshoots it;
-#   chasing that one case would be overfitting to a single launch.
+#   loss 0.146698 (house baseline 0.387097; -62%; submitted v2: 0.150081).
+#   Per case: p00 Wolverine 0.1357 (baseline 0.7437), p01 RDR2 0.1421
+#   (0.2868), p02 God of War 0.1109 (0.2146), p03 Spider-Man 2 0.1982
+#   (0.3033). Wins 4/4 cases vs the baseline. Coverage_90 0.90.
+#   Leave-one-comparable-out mean for this variant: 0.147507 over 34
+#   folds (worst fold 0.1624, still below the submitted entry's mean),
+#   so the gain is not driven by any single comparable. The two cases
+#   this variant loses vs v2 are p02 (+0.006) and p03 (+0.004); the
+#   wins on p00 (-0.018) and p01 (-0.005) are larger, and LOCO agrees.
 #
 # Rejected levers (all tested on practice, see TESTS.md):
 #   - Unconditioned median curve (v1): 0.310 -- the size conditioning
@@ -105,6 +110,18 @@
 # anchor is the real gain, the pooled sigma a small stable extra.
 # Rejected: top-half slope (0.225-0.260, p00 blows up), winsorized OLS
 # (0.189-0.202), Theil-Sen (0.195-0.202), floor 5000 (p00 0.39-0.42).
+#
+# v3 (2026-11-17, entry-v3): asymmetric band (lower quantiles 0.80x,
+# upper 1.18x the pooled width) and SHRINK 0.7 -> 0.75. Verified on the
+# four practice cases plus leave-one-comparable-out (34 folds):
+# practice 0.146698, LOCO 0.147507, vs the submitted v2's 0.150081 /
+# 0.150810. Round-3 search also tested and rejected: size-similarity
+# kernel weighting (0.18-0.28 -- collapses the effective sample),
+# console-only upweighting and a console second regressor (0.15-0.19),
+# simultaneous-unlock downweighting/regressor (0.16), hour-dependent
+# shrink (0.153-0.156), median-blend and q55-q65 anchors (0.15-0.17),
+# per-hour width scaling (0.1506), 3-point median smoothing (0.1515),
+# sigma-floor variations (no change -- floor never binds).
 
 import json
 import math
@@ -120,9 +137,12 @@ LEVELS = [0.05, 0.25, 0.5, 0.75, 0.95]
 Z = [-1.645, -0.674, 0, 0.674, 1.645]
 
 # OLS slope shrinkage toward the unconditioned median (see header, 2).
-SHRINK = 0.7
+SHRINK = 0.75
 # Residual-SD multiplier for the log-space band (see header, 3).
 WIDTH = 0.35
+# Asymmetric band multipliers (see header, 3): lower / upper quantiles.
+WIDTH_LO = 0.8
+WIDTH_HI = 1.18
 # Comparables with an hour-1 print below this are left out (see header, 4).
 V1_FLOOR = 1000
 # Minimum band sigma, in log units (a band must never collapse to zero).
@@ -230,8 +250,11 @@ def hour_quantiles(p1: float, h: int, curves: list[tuple[float, dict[int, float]
     a, b, sd = ols(xs, ys)
     med = mean_all + SHRINK * ((a + b * math.log(p1)) - mean_all)
     # Pooled SD when available; per-hour SD only in the degenerate case.
-    sig = max((pooled_sd if pooled_sd > 0 else sd) * WIDTH, SIGMA_FLOOR)
-    qs = [p1 * math.exp(med + z * sig) for z in Z]
+    # Asymmetric band (v3): the lower tail gets WIDTH_LO, the upper tail
+    # WIDTH_HI, because the residuals are right-skewed.
+    sig_lo = max((pooled_sd if pooled_sd > 0 else sd) * WIDTH * WIDTH_LO, SIGMA_FLOOR)
+    sig_hi = max((pooled_sd if pooled_sd > 0 else sd) * WIDTH * WIDTH_HI, SIGMA_FLOOR)
+    qs = [p1 * math.exp(med + z * (sig_lo if z < 0 else sig_hi)) for z in Z]
     # Enforce non-decreasing (exp is monotone, so this is a formality)
     # and the output cap of 1e9 viewers.
     out: list[float | int] = []
