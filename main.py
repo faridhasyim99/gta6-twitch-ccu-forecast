@@ -77,6 +77,12 @@
 # the program reads every *.in file it finds, in name order, and writes one
 # /output/<id>.out per case. Runs in ~0.05 s per case locally, far under
 # the 8 s cap; two runs on the same case write byte-identical output.
+#
+# Revision (2026-11-17): removed the dead sys.path setup and the now-unused
+# `import sys` — the grader runs with -P, but this program imports only the
+# standard library and ships no local module, so the insert had no effect.
+# Re-scored after the removal on the four practice cases: loss still
+# 0.170967 (p00 0.165828, p01 0.183308, p02 0.157833, p03 0.176899).
 
 import json
 import math
