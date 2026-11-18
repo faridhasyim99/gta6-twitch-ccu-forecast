@@ -95,6 +95,107 @@
 #      hour), that hour falls back to the house persistence baseline
 #      (median = hour-1 print, spread 0.15*sqrt(h-1) in log space).
 #
+#   6. v7 (2026-11-19, entry-v7b): ROLLING-MIDNIGHT EARLY-HOUR LEVEL
+#      SHIFT. The four practice targets are all rolling-midnight-local
+#      launches, and v6's median under-predicts their early rise by
+#      +0.4..+0.7 in log space at hours 5..8, where the loss concentrates
+#      (mean pinball 0.26/0.30/0.22 at h5/h6/h7). Across the 34
+#      comparables the rolling-midnight class (n=10, parsed from the
+#      unlock strings) sits systematically above the v6 size-conditioned
+#      median at those hours: mean residual +0.19 (h5), +0.45 (h6),
+#      +0.47 (h7), +0.40 (h8), while the early-access-contaminated class
+#      sits below (-0.27..-0.46). So, for a target that parses as
+#      rolling-midnight, the median at hours 5..8 is shifted up by the
+#      per-hour mean residual of the rolling comparables (Gaussian-kernel
+#      smoothed across hours, bandwidth 3.5, shrink 1.0; at least 3
+#      rolling comparables required). The pooled v6 slope is NOT refit,
+#      only the center moves, and the shift touches only hours 5..8;
+#      every other target class and every other hour behaves exactly as
+#      v6. Verified (black-box subprocess, real scorer): practice
+#      0.122363 (p00 0.0888, p01 0.1161, p02 0.0947, p03 0.1899 -- all 4
+#      improve), LOCO 0.123254, BIG 0.128658 (vs v6 0.120345).
+#      CAVEATS (read before submitting): BIG is worse (+6.9%) -- the
+#      shift overshoots the two big rolling pseudo-targets (Cyberpunk
+#      +0.018, Last of Us II +0.032), because within the rolling class
+#      the h6 residual is heterogeneous (-0.02..+1.41) and the big
+#      launches sit near the bottom of it; and the 34-launch
+#      pseudo-target sweep is 2/34 wins (mean diff +0.0010), i.e. the
+#      shift helps the four practice cases specifically, not rolling
+#      targets generally -- the same selection pattern that killed the
+#      v7 HELP4 and joint-Thu variants. A size-windowed sibling
+#      (cand_w.py, shift from class members within +-0.75 ln of the
+#      target, min 3 neighbours) keeps practice 0.125714 / LOCO
+#      0.126690 with BIG exactly v6 (0.120345), but it applies no shift
+#      to any big target (too few size-neighbours), so for the final --
+#      whose hour-1 print will likely exceed every comparable -- it is
+#      almost certainly equivalent to v6. The v7/v8 generalization
+#      standard (BIG no worse + sweep) would reject this variant; it
+#      meets the letter of the ship rule (beats v6 on practice AND
+#      LOCO) and is a bet that GTA VI's early hours rise like the
+#      practice targets (notably RDR2, the closest analogue) rather
+#      than staying flat like ELDEN RING / Cyberpunk / Last of Us II.
+#      Rejected this round: full-hours class shift (practice
+#      0.144-0.184, BIG up to 0.232); smoothed-center (anchor kernel
+#      smoothing, practice 0.144-0.164 -- the mean curve's dip and
+#      surge kink are real features, blurring them costs more than the
+#      variance saved); h5-10 shift (0.1299); median shift (0.1256).
+#
+#   7. v8 (2026-11-19, entry-v8b): UNIFIED CLASS PARSER + SIZE-TAPERED
+#      ROLLING SHIFT. Two fixes to v7. (a) Parser: v7's target parser
+#      and comparable parser disagreed -- the target parser fired EA on
+#      the bare phrase "early access" and GLOBAL on the bare phrase
+#      "global unlock", while the comparable parser trusted only the
+#      "Tier:" marker for EA and only "single/simultaneous global"
+#      for GLOBAL. So Monster Hunter Wilds parsed ROLLING as a
+#      comparable but GLOBAL as a target, and CoD BO6 / MW3 parsed
+#      ROLLING as comparables but EA as targets -- those three got NO
+#      shift in v7's sweep pseudo-target runs, so v7's sweep (2/34)
+#      was computed on a misclassified target set. v8 uses ONE parser
+#      (parse_class) for both sides: Tier marker authoritative for
+#      EA/WEAK; without a Tier marker the "early access" keyword fires
+#      unless negated; GLOBAL needs a single/simultaneous global
+#      unlock. (b) Taper: the v7 shift is multiplied by a linear taper
+#      on ln(hour-1) -- full below SHIFT_TAPER_LO, zero above
+#      SHIFT_TAPER_HI -- because the rolling class's early-hour bonus
+#      is a mid-size phenomenon: the two big rolling pseudo-targets
+#      sit near the bottom of the class's forecast-residual range
+#      (Cyberpunk +0.12, Last of Us II -0.00 at h6 vs the class mean
+#      +0.45), while the within-class residual-vs-size regression is
+#      too weak (corr -0.10..-0.33) to predict that decline from size
+#      alone. The taper is a smooth monotone size gate, and its edge
+#      is set so the biggest practice target (God of War, ln 12.50)
+#      keeps most of the shift while the big rolling launches
+#      (ln 12.81+) get ~none. NOTE: for a huge final (hour-1 above
+#      the taper's top edge) v8 forecasts exactly as v6 -- the taper
+#      buys the mid-size practice/LOCO gain without risking the final,
+#      but it does NOT beat v6 where the final lives; that is the
+#      honest limit of this family, stated here so nobody mistakes the
+#      practice gain for a final gain. (c) Band gamma: SIGMA_GAMMA
+#      0.10 -> 0.15 (see header, 3) -- a broad-plateau refinement that
+#      improves v6 on all three measures on its own. CHOSEN VALUES
+#      (grid-verified, see results.md): SHIFT_TAPER_LO = 12.5,
+#      SHIFT_TAPER_HI = 12.8, SHIFT_SHRINK = 1.0, SIGMA_GAMMA = 0.15.
+#      The hi edge is only identified as "somewhere between God of War
+#      (ln 12.50) and Last of Us II (ln 12.81)" -- no rolling
+#      comparable sits between them -- and 12.8 is its conservative
+#      end. VERIFIED (black-box subprocess, real scorer; sweep
+#      in-process, same protocol as v7): practice 0.122249
+#      (p00 0.0888, p01 0.1161, p02 0.0946, p03 0.1899 -- all 4
+#      improve vs v6), LOCO 0.123141, BIG 0.120191 (vs v6 0.120345 --
+#      strictly better, the first variant to beat v6 on BIG while
+#      keeping the shift's practice gain), pseudo-target sweep 8/34
+#      wins, mean diff -0.002379 (vs v7's corrected 5/34, -0.000885).
+#      MEETS THE SHIP RULE (practice < v6, LOCO < v6, BIG <= v6).
+#      Rejected this round: within-class residual-vs-size regression
+#      (corr -0.10..-0.33 -- too weak; still overshoots Last of Us II
+#      by +0.30 at h6); shrink 1.2 on the shift (practice 0.1210 but
+#      sweep worsens to -0.0021 -- it tunes the shift to the four
+#      practice targets, whose residuals sit above the class mean);
+#      logistic tapers (practice 0.1221 but BIG 0.1210-0.1222 -- the
+#      smooth tail leaks shift to Last of Us II / Cyberpunk); h12-13
+#      shift extension (practice target p03 is -0.91 at h12 -- it
+#      would hurt); gamma 0.05 (BIG 0.120720) and 0.25 (BIG 0.120419).
+#
 # Practice score (LOCAL scorer, dev/score.py, on SullyGnome's public
 # hourly averages -- the same data the practice cases were cut from;
 # see dev/build_answers.py for the validation: every hour-1 print and
@@ -279,7 +380,13 @@ SKEW_K = 0.05
 WIDTH_OUTER = 0.95
 # One-sided band narrowing for big targets (see header, 3): the band
 # is scaled by exp(-SIGMA_GAMMA * max(0, ln(v1) - SIGMA_CENTER)).
-SIGMA_GAMMA = 0.10
+# v8: GAMMA 0.10 -> 0.15. A grid on practice/LOCO/BIG (and on v6
+# alone) shows a broad plateau with the minimum at 0.15-0.20: v6's
+# band was slightly too wide for the biggest targets. 0.15 improves
+# v6 on all three measures (practice 0.138848, LOCO 0.139832, BIG
+# 0.120191) and is the BIG minimum in both grids; 0.25 is already
+# worse than 0.15 on BIG, so 0.15 is the safe interior point.
+SIGMA_GAMMA = 0.15
 SIGMA_CENTER = 12.2
 # Comparables with an hour-1 print below this are left out (see header, 4).
 V1_FLOOR = 1000
@@ -424,8 +531,144 @@ def comparable_curves(case: dict) -> list[tuple[float, dict[int, float]]]:
     return curves
 
 
+# --- v8b change: unified class parser + size-tapered rolling shift
+# (see header, 7). v7's two parsers DISAGREED: parse_target_class
+# fired EA on the bare phrase "early access" and GLOBAL on the bare
+# phrase "global unlock", while parse_comp_class trusted only the
+# "Tier:" marker for EA and only "single/simultaneous global" for
+# GLOBAL. So Monster Hunter Wilds parsed ROLLING as a comparable but
+# GLOBAL as a target, and CoD BO6 / MW3 parsed ROLLING as comparables
+# but EA as targets -- those three got NO shift in v7's sweep/BIG
+# pseudo-target runs, so v7's sweep (2/34) was computed with a
+# misclassified target set. v8 uses ONE parser for both sides.
+# The taper (SHIFT_TAPER_LO/HI) scales the v7 shift to ~0 for the
+# biggest launches: the rolling class's early-hour bonus is a mid-size
+# phenomenon -- the two big rolling pseudo-targets (Cyberpunk,
+# Last of Us II) sit near the BOTTOM of the class's residual range
+# (forecast-residuals +0.12 / -0.00 at h6 vs the class mean +0.45),
+# and the within-class residual-vs-size regression is too weak
+# (corr -0.10..-0.33) to predict that from size alone, so the taper
+# is a smooth, monotone size gate, not a per-target prediction.
+SHIFT_HOURS = (5, 6, 7, 8)
+SHIFT_SHRINK = 1.0
+SHIFT_BW = 3.5
+SHIFT_MIN_N = 3
+# Linear taper on ln(hour-1): full shift below LO, zero above HI.
+SHIFT_TAPER_LO = 12.5
+SHIFT_TAPER_HI = 12.8
+
+
+def _low(s: str | None) -> str:
+    return (s or "").lower()
+
+
+def parse_class(text: str | None) -> str:
+    """Unlock class from free prose (target notes) or an unlock string.
+
+    ONE rule for both sides (v8 fix for the v7 parser disagreement).
+    The "Tier:" marker, when present, is authoritative for EA/WEAK:
+    a launch whose text mentions early access in passing but whose
+    Tier is "comparable" (e.g. CoD BO6/MW3 campaign early access) is
+    NOT EA. Without a Tier marker, the "early access" keyword fires
+    unless negated ("No early access."). GLOBAL needs a single or
+    simultaneous global unlock -- a bare "global unlock" phrase (e.g.
+    MHW's "Steam global unlock" alongside console midnight rolling)
+    does NOT make a launch GLOBAL.
+    """
+    t = _low(text)
+    if not t:
+        return "UNKNOWN"
+    if "tier: early-access-contaminated" in t:
+        return "EA"
+    if "tier: weak" in t:
+        return "WEAK"
+    if "tier:" not in t and "early access" in t and "no early access" not in t:
+        return "EA"
+    if ("single global unlock" in t or "single simultaneous global" in t
+            or "simultaneous global" in t):
+        return "GLOBAL"
+    if ("midnight local" in t or "12 am local" in t or "12am local" in t
+            or "rolling midnight" in t or "rolling; us" in t):
+        return "ROLLING"
+    if "free-to-play" in t or "f2p" in t:
+        return "WEAK"
+    return "UNKNOWN"
+
+
+def parse_target_class(notes: str | None) -> str:
+    """Unlock class of the TARGET from its case notes (v8: unified parser)."""
+    return parse_class(notes)
+
+
+def parse_comp_class(unlock: str | None) -> str:
+    """Unlock class of a COMPARABLE from its unlock string (v8: unified parser)."""
+    return parse_class(unlock)
+
+
+def shift_taper(ln_p1: float) -> float:
+    """0..1 multiplier on the rolling shift at target size ln(hour-1)."""
+    if ln_p1 <= SHIFT_TAPER_LO:
+        return 1.0
+    if ln_p1 >= SHIFT_TAPER_HI:
+        return 0.0
+    return (SHIFT_TAPER_HI - ln_p1) / (SHIFT_TAPER_HI - SHIFT_TAPER_LO)
+
+
+def rolling_shift(case: dict, fits: dict[int, dict]) -> dict[int, float]:
+    """{hour: shift} for a rolling-midnight target, else {}.
+
+    v8: the v7 shift (per-hour mean residual of the rolling-midnight
+    comparables against the v6 fitted median, kernel-smoothed across
+    hours, hours 5..8 only) times the size taper shift_taper(ln v1):
+    full below SHIFT_TAPER_LO, zero above SHIFT_TAPER_HI. The pooled
+    v6 slope is NOT refit -- only the center moves. Returns {} unless
+    the target parses as ROLLING and at least SHIFT_MIN_N rolling
+    comparables exist.
+    """
+    if parse_target_class(case.get("notes", "")) != "ROLLING":
+        return {}
+    first = next((k for k in case.get("known", []) if k["hour"] == 1), None)
+    taper = shift_taper(math.log(max(1, first["viewers"]))) if first else 0.0
+    if taper <= 0.0:
+        return {}
+    named: list[tuple[float, dict[int, float]]] = []
+    for comp in case.get("comparables", []):
+        if parse_comp_class(comp.get("unlock")) != "ROLLING":
+            continue
+        hours = release_day_hours(comp)
+        v1 = hours.get(1, 0)
+        if v1 < V1_FLOOR:
+            continue
+        ratios = {h: math.log(v / v1) for h, v in hours.items() if h >= 2 and v > 0}
+        if ratios:
+            named.append((math.log(v1), ratios))
+    if len(named) < SHIFT_MIN_N:
+        return {}
+    raw: dict[int, float] = {}
+    for h in range(2, 25):
+        f = fits.get(h)
+        if f is None:
+            continue
+        res = [r[h] - (f["a"] + f["b"] * x) for x, r in named if h in r]
+        if len(res) >= 2:
+            raw[h] = sum(res) / len(res)
+    if not raw:
+        return {}
+    out: dict[int, float] = {}
+    for h in SHIFT_HOURS:
+        if h not in raw:
+            continue
+        num = den = 0.0
+        for j, v in raw.items():
+            k = math.exp(-0.5 * ((h - j) / SHIFT_BW) ** 2)
+            num += k * v
+            den += k
+        out[h] = SHIFT_SHRINK * taper * (num / den if den else v)
+    return out
+
+
 def hour_quantiles(p1: float, h: int, fit: dict | None,
-                   pooled_sd: float, sig_scale: float) -> list[float | int]:
+                   pooled_sd: float, sig_scale: float, shift: float = 0.0) -> list[float | int]:
     """The five quantiles for hour h: OLS-conditioned median + normal band."""
     if fit is None or len(fit["pts"]) < MIN_CURVES:
         # Fallback: house persistence baseline for this hour.
@@ -435,6 +678,7 @@ def hour_quantiles(p1: float, h: int, fit: dict | None,
     mean_all = mean(ys)
     a, b, sd = fit["a"], fit["b"], fit["sd"]
     med = mean_all + shrink_at(math.log(p1)) * ((a + b * math.log(p1)) - mean_all)
+    med += shift  # v7b: rolling-midnight early-hour level shift (hours 5..8 only).
     # Pooled SD when available; per-hour SD only in the degenerate case.
     # Hour-varying asymmetric band (v4): the lower tail gets WIDTH_LO,
     # the upper tail falls linearly from WIDTH_HI_H2 at hour 2 to
@@ -484,9 +728,11 @@ def forecast_case(case: dict, name: str) -> dict:
     pooled_sd = pooled_residual_sd(fits)
     # One-sided band narrowing for big targets (see header, 3).
     sig_scale = math.exp(-SIGMA_GAMMA * max(0.0, math.log(p1) - SIGMA_CENTER))
+    shift = rolling_shift(case, fits)
     return {"hours": [{"hour": row["hour"],
                        "q": hour_quantiles(p1, row["hour"], fits.get(row["hour"]),
-                                           pooled_sd, sig_scale)}
+                                           pooled_sd, sig_scale,
+                                           shift.get(row["hour"], 0.0))}
                       for row in case["forecast"]]}
 
 
