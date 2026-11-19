@@ -1,3 +1,22 @@
+# v9 — v8 + per-hour band-width scaling (Track D).
+#
+# CHANGE vs v8 (entry-v8b/main.py, practice 0.122249 / LOCO 0.123141 /
+# BIG 0.120191): the forecast band width at hour h is multiplied by
+# (sd_h / pooled_sd) ** 0.25, clamped to [0.5, 2.0], where sd_h is that
+# hour's own OLS residual SD and pooled_sd the pooled residual SD.
+# Hours whose shape is genuinely noisier (h12-13, SD ~1.1 vs pooled ~0.8)
+# get a slightly wider band; quiet hours get a slightly narrower one.
+# The median (the forecast centre) is UNCHANGED from v8.
+#
+# Verified (verify_final.py, black-box subprocess + real dev/score.py):
+#   practice 0.121955, LOCO 0.122825, BIG 0.119991, sweep 22/34 (+0.000019).
+# Meets the strict ship rule vs v8 (practice < 0.122249, LOCO < 0.123141,
+# BIG <= 0.120191). Gain is small (-0.0003 practice, -0.0002 BIG):
+# the v9 round's honest conclusion is that sub-0.10 is NOT reachable —
+# the residual SD is 0.75-1.1 in log space and no tested feature
+# (pre-release viewers, platform, diurnal phase, archetypes) explains
+# enough of it. See results.md for the full null-result evidence.
+#
 # gta6-twitch-ccu-forecast-01 entry: comparable-shape forecaster.
 #
 # Forecasts the Twitch concurrent viewers of the "Grand Theft Auto VI"
@@ -386,6 +405,7 @@ WIDTH_OUTER = 0.95
 # v6 on all three measures (practice 0.138848, LOCO 0.139832, BIG
 # 0.120191) and is the BIG minimum in both grids; 0.25 is already
 # worse than 0.15 on BIG, so 0.15 is the safe interior point.
+WIDTH_ALPHA = 0.25  # v9: per-hour band-width scaling exponent (see header)
 SIGMA_GAMMA = 0.15
 SIGMA_CENTER = 12.2
 # Comparables with an hour-1 print below this are left out (see header, 4).
@@ -697,6 +717,10 @@ def hour_quantiles(p1: float, h: int, fit: dict | None,
     lo_m = max(0.4, lo_m * (1.0 - 0.3 * SKEW_K * s))
     hi_m = hi_m * (1.0 + SKEW_K * s)
     sig_base = (pooled_sd if pooled_sd > 0 else sd) * WIDTH * sig_scale
+    # Track D: per-hour width scaling by the hour's own residual SD.
+    if WIDTH_ALPHA:
+        _r = (max(sd, 0.05) / max(pooled_sd, 0.05)) ** WIDTH_ALPHA
+        sig_base *= max(0.5, min(2.0, _r))
     qs = []
     for z in Z:
         mult = lo_m if z < 0 else hi_m
